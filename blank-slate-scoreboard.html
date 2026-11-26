@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Blank Slate Scoreboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Inter:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--page:#dfe3e6;--board:#fbfbf8;--ink:#1f4fd8;--ink2:#14338f;--red:#d6322b;--green:#1b8a4b;--line:#c9ced2;--text:#23272b;--muted:#6a727a;--frame:#aeb5bb;--sel:#fff3c4;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--page:#14171a;--board:#22272b;--ink:#8fb0ff;--ink2:#b9ccff;--red:#ff7a70;--green:#5fd18b;--line:#3a4147;--text:#e8eaec;--muted:#98a1a9;--frame:#4a525a;--sel:#4a4220;color-scheme:dark}}
+:root[data-theme="dark"]{--page:#14171a;--board:#22272b;--ink:#8fb0ff;--ink2:#b9ccff;--red:#ff7a70;--green:#5fd18b;--line:#3a4147;--text:#e8eaec;--muted:#98a1a9;--frame:#4a525a;--sel:#4a4220;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--page);color:var(--text);font-family:Inter,system-ui,sans-serif;padding:16px}
+.board{max-width:880px;margin:0 auto;background:var(--board);border:10px solid var(--frame);border-radius:10px;padding:18px 20px 22px}
+h1{font-family:Kalam,cursive;font-weight:700;font-size:2.2rem;margin:0;color:var(--ink2)}
+.sub{font-family:Kalam,cursive;color:var(--muted);margin:0 0 14px}
+.row{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:center;padding:10px 8px;border-bottom:2px dashed var(--line);border-radius:6px;cursor:pointer}
+.row.sel{background:var(--sel)}
+.row:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.pick{width:26px;height:26px;border:3px solid var(--ink);border-radius:6px;display:grid;place-items:center;font-weight:700;color:var(--ink);font-size:1rem}
+.name{width:100%;font-family:Kalam,cursive;font-size:1.5rem;font-weight:700;color:var(--ink2);background:transparent;border:0;border-bottom:2px solid transparent;padding:0 2px}
+.name:hover,.name:focus{border-bottom-color:var(--line)}
+.meta{display:flex;align-items:center;gap:8px}
+.score{font-family:Kalam,cursive;font-weight:700;font-size:1.6rem;min-width:2.2ch;text-align:right;color:var(--red)}
+.x{background:none;border:0;color:var(--muted);font-size:1.3rem;cursor:pointer;padding:2px 8px}
+.bubbles{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px 16px}
+.g{display:flex;gap:4px}
+.b{width:20px;height:20px;border:2.5px solid var(--ink);border-radius:50%}
+.b.on{background:var(--ink)}
+.b.last{border-color:var(--red);background:var(--red)}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px}
+button{font:600 .95rem Inter,system-ui,sans-serif;border:2px solid var(--ink);background:transparent;color:var(--ink2);padding:9px 14px;border-radius:8px;cursor:pointer}
+button.main{background:var(--ink);color:var(--board)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.hint{font-family:Kalam,cursive;font-size:1.1rem;color:var(--muted);flex:1 1 220px}
+.win{font-family:Kalam,cursive;font-weight:700;font-size:1.6rem;color:var(--green);border:3px solid var(--green);border-radius:10px;padding:8px 14px;margin:0 0 12px}
+.win[hidden]{display:none}
+.add{display:flex;gap:8px;margin-top:14px}
+.add input{flex:1;font:inherit;font-family:Kalam,cursive;font-size:1.1rem;border:2px solid var(--line);background:transparent;color:var(--text);border-radius:8px;padding:7px 10px}
+.rules{margin-top:18px;font-size:.85rem;color:var(--muted);line-height:1.5;max-width:70ch}
+</style>
+</head>
+<body>
+<main class="board">
+  <h1>Blank Slate</h1>
+  <p class="sub">First to 25 wins</p>
+  <p class="win" id="win" hidden role="status"></p>
+  <div id="rows"></div>
+  <div class="add">
+    <input id="newName" placeholder="Add a player" maxlength="24" aria-label="New player name">
+    <button id="addBtn">Add player</button>
+  </div>
+  <div class="bar">
+    <button class="main" id="award" disabled>Award match</button>
+    <button id="undo" disabled>Undo</button>
+    <button id="reset">New game</button>
+    <span class="hint" id="hint"></span>
+  </div>
+  <p class="rules">Tap the players who matched, then Award match. Exactly two players matched: 3 points each. Three or more matched: 1 point each. Several groups in one round? Award each group separately.</p>
+</main>
+<script>
+const WIN=25;
+let S={players:[{id:1,name:"Player 1",score:0},{id:2,name:"Player 2",score:0},{id:3,name:"Player 3",score:0}],next:4,hist:[],last:{}};
+let sel=new Set();
+try{const r=localStorage.getItem("blankslate");if(r){const p=JSON.parse(r);if(p&&Array.isArray(p.players)&&p.players.length)S=p}}catch(e){}
+const $=id=>document.getElementById(id);
+const save=()=>{try{localStorage.setItem("blankslate",JSON.stringify(S))}catch(e){}};
+const won=()=>S.players.some(p=>p.score>=WIN);
+
+function render(){
+  const rows=$("rows");rows.innerHTML="";
+  S.players.forEach(p=>{
+    const r=document.createElement("div");
+    r.className="row"+(sel.has(p.id)?" sel":"");r.tabIndex=0;r.setAttribute("role","checkbox");
+    r.setAttribute("aria-checked",sel.has(p.id));r.setAttribute("aria-label","Select "+p.name);
+    const toggle=()=>{if(won())return;sel.has(p.id)?sel.delete(p.id):sel.add(p.id);render()};
+    r.addEventListener("click",e=>{if(e.target.closest("input,.x"))return;toggle()});
+    r.addEventListener("keydown",e=>{if(e.target===r&&(e.key===" "||e.key==="Enter")){e.preventDefault();toggle()}});
+    const pick=document.createElement("div");pick.className="pick";pick.textContent=sel.has(p.id)?"✓":"";
+    const meta=document.createElement("div");meta.className="meta";
+    const inp=document.createElement("input");inp.className="name";inp.value=p.name;inp.maxLength=24;inp.setAttribute("aria-label","Player name");
+    inp.addEventListener("input",()=>{p.name=inp.value;save()});
+    const sc=document.createElement("span");sc.className="score";sc.textContent=p.score;
+    const x=document.createElement("button");x.className="x";x.textContent="×";x.title="Remove player";x.setAttribute("aria-label","Remove "+p.name);
+    x.addEventListener("click",()=>{if(S.players.length<=2)return;S.players=S.players.filter(q=>q.id!==p.id);sel.delete(p.id);S.hist=[];save();render()});
+    meta.append(inp,sc,x);
+    const bub=document.createElement("div");bub.className="bubbles";
+    for(let g=0;g<5;g++){const grp=document.createElement("div");grp.className="g";
+      for(let i=1;i<=5;i++){const n=g*5+i;const b=document.createElement("span");
+        b.className="b"+(n<=p.score?" on":"")+(n===p.score&&(S.last[p.id]||0)>0?" last":"");grp.append(b)}
+      bub.append(grp)}
+    r.append(pick,meta,bub);rows.append(r);
+  });
+  const n=sel.size,w=won();
+  $("award").disabled=n<2||w;$("undo").disabled=!S.hist.length;
+  $("hint").textContent=w?"":n<2?"Select two or more players who matched.":n===2?"Two players matched: +3 each.":"Group match: +1 each.";
+  const win=$("win");
+  if(w){const top=Math.max(...S.players.map(p=>p.score));
+    const names=S.players.filter(p=>p.score===top).map(p=>p.name||"Unnamed");
+    win.hidden=false;win.textContent=names.length>1?"Tie at "+top+": "+names.join(" and ")+". Play a tiebreak round.":names[0]+" wins with "+top+" points!"}
+  else win.hidden=true;
+}
+$("award").addEventListener("click",()=>{
+  if(sel.size<2||won())return;
+  S.hist.push({scores:Object.fromEntries(S.players.map(p=>[p.id,p.score])),last:S.last});
+  const pts=sel.size===2?3:1;S.last={};
+  S.players.forEach(p=>{if(sel.has(p.id)){p.score+=pts;S.last[p.id]=pts}});
+  sel.clear();save();render();
+});
+$("undo").addEventListener("click",()=>{
+  const h=S.hist.pop();if(!h)return;
+  S.players.forEach(p=>{if(p.id in h.scores)p.score=h.scores[p.id]});
+  S.last=h.last;save();render();
+});
+$("reset").addEventListener("click",()=>{
+  if(!confirm("Start a new game? Scores reset to 0 and names stay."))return;
+  S.players.forEach(p=>p.score=0);S.hist=[];S.last={};sel.clear();save();render();
+});
+function add(){
+  const v=$("newName").value.trim();if(!v||S.players.length>=12)return;
+  S.players.push({id:S.next++,name:v,score:0});$("newName").value="";save();render();
+}
+$("addBtn").addEventListener("click",add);
+$("newName").addEventListener("keydown",e=>{if(e.key==="Enter")add()});
+render();
+</script>
+</body>
+</html>
